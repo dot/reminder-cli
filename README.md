@@ -16,7 +16,7 @@ A Swift-based command-line tool to manage iCloud Reminders on macOS.
 ## Requirements
 
 - macOS 13.0 or later
-- Swift 5.9 or later
+- Swift 5.9 or later (swift-tools-version 5.9)
 - Xcode (for building)
 
 ## Installation
@@ -51,16 +51,27 @@ reminder-cli list "Shopping"
 
 # Include completed reminders
 reminder-cli list --completed
+
+# Sort order (due-date, priority, title, created, status)
+reminder-cli list --sort priority
+
+# Output format (text, json, pretty-json, yaml)
+reminder-cli list --format pretty-json
 ```
+
+List output includes a short ID prefix like `[29CC6D52]` that you can use for show/update/complete/delete. If the prefix is ambiguous, use a longer prefix or the full ID.
 
 ### Show reminder details
 
 ```bash
-# By title
-reminder-cli show "Buy milk"
+# By short ID prefix (from list output)
+reminder-cli show 29CC6D52
 
-# By ID
+# By full ID
 reminder-cli show 29CC6D52-D95F-43D1-BF77-0777374C8D93
+
+# Output format (text, json, pretty-json, yaml)
+reminder-cli show 29CC6D52 --format yaml
 ```
 
 ### Create a new reminder
@@ -92,18 +103,18 @@ reminder-cli create "Read article" \
 
 ```bash
 # Update title
-reminder-cli update "Buy milk" --title "Buy oat milk"
+reminder-cli update 29CC6D52 --title "Buy oat milk"
 
 # Update notes and due date
-reminder-cli update "Buy milk" \
+reminder-cli update 29CC6D52 \
   --notes "Get organic" \
   --due-date "2026-01-16"
 
 # Update priority (0=none, 1-4=high, 5=medium, 6-9=low)
-reminder-cli update "Buy milk" --priority 1
+reminder-cli update 29CC6D52 --priority 1
 
 # Update start date and URL
-reminder-cli update "Buy milk" \
+reminder-cli update 29CC6D52 \
   --start-date "2026-01-14" \
   --url "https://example.com/store"
 ```
@@ -111,17 +122,17 @@ reminder-cli update "Buy milk" \
 ### Complete a reminder
 
 ```bash
-reminder-cli complete "Buy milk"
+reminder-cli complete 29CC6D52
 ```
 
 ### Delete a reminder
 
 ```bash
 # With confirmation prompt
-reminder-cli delete "Buy milk"
+reminder-cli delete 29CC6D52
 
 # Skip confirmation
-reminder-cli delete "Buy milk" --force
+reminder-cli delete 29CC6D52 --force
 ```
 
 ## Priority Levels
