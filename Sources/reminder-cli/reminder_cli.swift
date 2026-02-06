@@ -178,9 +178,6 @@ extension ReminderCLI {
         @Option(name: .shortAndLong, help: "Priority (0-9, where 0=none, 1-4=high, 5=medium, 6-9=low)")
         var priority: Int?
 
-        @Flag(name: .shortAndLong, help: "Mark as flagged")
-        var flagged: Bool = false
-
         @Option(name: .shortAndLong, help: "URL associated with the reminder")
         var url: String?
 
@@ -194,7 +191,6 @@ extension ReminderCLI {
                 startDate: startDate,
                 dueDate: dueDate,
                 priority: priority,
-                flagged: flagged ? true : nil,
                 url: url
             )
         }
@@ -257,9 +253,6 @@ extension ReminderCLI {
         @Option(name: .shortAndLong, help: "New priority (0-9)")
         var priority: Int?
 
-        @Option(name: .long, help: "Set flagged status (true/false)")
-        var flagged: Bool?
-
         @Option(name: .shortAndLong, help: "New URL")
         var url: String?
 
@@ -273,7 +266,6 @@ extension ReminderCLI {
                 startDate: startDate,
                 dueDate: dueDate,
                 priority: priority,
-                flagged: flagged,
                 url: url
             )
         }

@@ -6,6 +6,7 @@ enum ReminderStoreError: LocalizedError {
     case reminderNotFound(String)
     case ambiguousIdentifier(String, [EKReminder])
     case listNotFound(String)
+    case noAvailableLists
     case invalidDateFormat(String)
     case invalidPriority(Int)
 
@@ -27,6 +28,8 @@ enum ReminderStoreError: LocalizedError {
             return message
         case .listNotFound(let name):
             return "List not found: \(name)"
+        case .noAvailableLists:
+            return "No reminder lists are available. Please create a list in Reminders.app."
         case .invalidDateFormat(let format):
             return "Invalid date format: \(format). Use YYYY-MM-DD or YYYY-MM-DD HH:MM"
         case .invalidPriority(let priority):
@@ -210,7 +213,6 @@ class ReminderStore {
         startDate: String?,
         dueDate: String?,
         priority: Int?,
-        flagged: Bool?,
         url: String?
     ) async throws {
         let calendar: EKCalendar
@@ -220,7 +222,13 @@ class ReminderStore {
             }
             calendar = found
         } else {
-            calendar = eventStore.defaultCalendarForNewReminders() ?? eventStore.calendars(for: .reminder).first!
+            if let defaultCalendar = eventStore.defaultCalendarForNewReminders() {
+                calendar = defaultCalendar
+            } else if let firstCalendar = eventStore.calendars(for: .reminder).first {
+                calendar = firstCalendar
+            } else {
+                throw ReminderStoreError.noAvailableLists
+            }
         }
 
         let reminder = EKReminder(eventStore: eventStore)
@@ -229,11 +237,11 @@ class ReminderStore {
         reminder.notes = notes
 
         if let startDateString = startDate {
-            reminder.startDateComponents = try parseDateComponents(from: startDateString)
+            reminder.startDateComponents = try DateParser.parseDateComponents(from: startDateString)
         }
 
         if let dueDateString = dueDate {
-            reminder.dueDateComponents = try parseDateComponents(from: dueDateString)
+            reminder.dueDateComponents = try DateParser.parseDateComponents(from: dueDateString)
         }
 
         if let priority = priority {
@@ -242,11 +250,6 @@ class ReminderStore {
             }
             reminder.priority = priority
         }
-
-        // TODO: EventKit doesn't support isFlagged directly
-        // if let flagged = flagged {
-        //     reminder.isFlagged = flagged
-        // }
 
         if let urlString = url, let url = URL(string: urlString) {
             reminder.url = url
@@ -270,7 +273,6 @@ class ReminderStore {
         startDate: String?,
         dueDate: String?,
         priority: Int?,
-        flagged: Bool?,
         url: String?
     ) async throws {
         let reminder = try await findReminder(identifier: identifier)
@@ -284,11 +286,11 @@ class ReminderStore {
         }
 
         if let startDateString = startDate {
-            reminder.startDateComponents = try parseDateComponents(from: startDateString)
+            reminder.startDateComponents = try DateParser.parseDateComponents(from: startDateString)
         }
 
         if let dueDateString = dueDate {
-            reminder.dueDateComponents = try parseDateComponents(from: dueDateString)
+            reminder.dueDateComponents = try DateParser.parseDateComponents(from: dueDateString)
         }
 
         if let priority = priority {
@@ -297,11 +299,6 @@ class ReminderStore {
             }
             reminder.priority = priority
         }
-
-        // TODO: EventKit doesn't support isFlagged directly
-        // if let flagged = flagged {
-        //     reminder.isFlagged = flagged
-        // }
 
         if let urlString = url, let url = URL(string: urlString) {
             reminder.url = url
@@ -386,25 +383,6 @@ class ReminderStore {
         }
 
         throw ReminderStoreError.reminderNotFound(identifier)
-    }
-
-    private func parseDateComponents(from string: String) throws -> DateComponents {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-
-        // Try with time first
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
-        if let date = formatter.date(from: string) {
-            return Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
-        }
-
-        // Try date only
-        formatter.dateFormat = "yyyy-MM-dd"
-        if let date = formatter.date(from: string) {
-            return Calendar.current.dateComponents([.year, .month, .day], from: date)
-        }
-
-        throw ReminderStoreError.invalidDateFormat(string)
     }
 
     private func sortReminders(by sortOption: SortOption) -> (EKReminder, EKReminder) -> Bool {

@@ -25,5 +25,9 @@ let package = Package(
                 .swiftLanguageMode(.v5)
             ]
         ),
+        .testTarget(
+            name: "reminder_cliTests",
+            dependencies: ["reminder-cli"]
+        ),
     ]
 )
