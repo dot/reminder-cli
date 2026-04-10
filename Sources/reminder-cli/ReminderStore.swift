@@ -288,6 +288,7 @@ class ReminderStore {
         dueDate: String?,
         priority: Int?,
         url: String?,
+        listName: String? = nil,
         format: OutputFormat = .text
     ) async throws {
         let reminder = try await findReminder(identifier: identifier)
@@ -319,10 +320,21 @@ class ReminderStore {
             reminder.url = url
         }
 
+        if let listName = listName {
+            guard let calendar = findCalendar(named: listName) else {
+                throw ReminderStoreError.listNotFound(listName)
+            }
+            reminder.calendar = calendar
+        }
+
         try eventStore.save(reminder, commit: true)
 
         if format == .text {
-            print("✅ Updated reminder: \(reminder.title ?? "(no title)")")
+            var message = "✅ Updated reminder: \(reminder.title ?? "(no title)")"
+            if listName != nil {
+                message += " → moved to \(reminder.calendar.title)"
+            }
+            print(message)
         } else {
             let formatter = OutputFormatter(format: format)
             try formatter.output(reminder: formatter.convertReminder(reminder))

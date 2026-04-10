@@ -282,6 +282,9 @@ extension ReminderCLI {
         @Option(name: .shortAndLong, help: "New URL")
         var url: String?
 
+        @Option(name: .shortAndLong, help: "Move to a different list")
+        var list: String?
+
         @Option(name: .shortAndLong, help: "Output format (text, json, pretty-json, yaml)")
         var format: OutputFormat = .text
 
@@ -296,6 +299,7 @@ extension ReminderCLI {
                 dueDate: dueDate,
                 priority: priority,
                 url: url,
+                listName: list,
                 format: format
             )
         }
