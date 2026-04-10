@@ -357,7 +357,8 @@ class ReminderStore {
         startDate: String?,
         dueDate: String?,
         priority: Int?,
-        url: String?
+        url: String?,
+        listName: String? = nil
     ) async throws {
         let reminder = try await findReminder(identifier: identifier)
 
@@ -388,9 +389,20 @@ class ReminderStore {
             reminder.url = url
         }
 
+        if let listName = listName {
+            guard let calendar = findCalendar(named: listName) else {
+                throw ReminderStoreError.listNotFound(listName)
+            }
+            reminder.calendar = calendar
+        }
+
         try eventStore.save(reminder, commit: true)
 
-        print("✅ Updated reminder: \(reminder.title ?? "(no title)")")
+        var message = "✅ Updated reminder: \(reminder.title ?? "(no title)")"
+        if let listName = listName {
+            message += " → moved to \(listName)"
+        }
+        print(message)
     }
 
     // MARK: - Delete Operation
