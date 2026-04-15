@@ -334,7 +334,12 @@ class ReminderStore {
         }
 
         if let dueDateString = dueDate {
-            reminder.dueDateComponents = try DateParser.parseDateComponents(from: dueDateString)
+            let components = try DateParser.parseDateComponents(from: dueDateString)
+            reminder.dueDateComponents = components
+            // Add alarm when due date includes time, so iOS/macOS shows a notification
+            if components.hour != nil {
+                reminder.addAlarm(EKAlarm(relativeOffset: 0))
+            }
         }
 
         if let priority = priority {
@@ -397,7 +402,14 @@ class ReminderStore {
         }
 
         if let dueDateString = dueDate {
-            reminder.dueDateComponents = try DateParser.parseDateComponents(from: dueDateString)
+            let components = try DateParser.parseDateComponents(from: dueDateString)
+            reminder.dueDateComponents = components
+            // Add alarm when due date includes time, so iOS/macOS shows a notification
+            if components.hour != nil {
+                // Remove existing alarms to avoid duplicates on repeated updates
+                reminder.alarms?.forEach { reminder.removeAlarm($0) }
+                reminder.addAlarm(EKAlarm(relativeOffset: 0))
+            }
         }
 
         if let priority = priority {
