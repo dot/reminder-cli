@@ -11,6 +11,8 @@ enum ReminderStoreError: LocalizedError {
     case invalidPriority(Int)
     case listAlreadyExists(String)
     case cannotDeleteList(String)
+    case invalidRecurrence(String)
+    case recurrenceRequiresDueDate
 
     var errorDescription: String? {
         switch self {
@@ -40,6 +42,10 @@ enum ReminderStoreError: LocalizedError {
             return "List already exists: \(name)"
         case .cannotDeleteList(let name):
             return "Failed to delete list: \(name)"
+        case .invalidRecurrence(let value):
+            return "Invalid recurrence: \(value). Use: daily, weekly, monthly, yearly, \"every N days/weeks/months/years\", or \"weekly:mon,wed,fri\""
+        case .recurrenceRequiresDueDate:
+            return "A recurring reminder requires --due-date to be set"
         }
     }
 }
@@ -297,7 +303,10 @@ class ReminderStore {
         startDate: String?,
         dueDate: String?,
         priority: Int?,
-        url: String?
+        url: String?,
+        recurrence: String? = nil,
+        recurrenceEnd: String? = nil,
+        recurrenceCount: Int? = nil
     ) async throws {
         let calendar: EKCalendar
         if let listName = listName {
@@ -339,6 +348,15 @@ class ReminderStore {
             reminder.url = url
         }
 
+        if let recurrence = recurrence {
+            if dueDate == nil {
+                throw ReminderStoreError.recurrenceRequiresDueDate
+            }
+            let end = try buildRecurrenceEnd(endDate: recurrenceEnd, count: recurrenceCount)
+            let rule = try RecurrenceParser.parse(from: recurrence, end: end)
+            reminder.addRecurrenceRule(rule)
+        }
+
         try eventStore.save(reminder, commit: true)
 
         print("✅ Created reminder: \(title)")
@@ -358,7 +376,11 @@ class ReminderStore {
         dueDate: String?,
         priority: Int?,
         url: String?,
-        listName: String? = nil
+        listName: String? = nil,
+        recurrence: String? = nil,
+        recurrenceEnd: String? = nil,
+        recurrenceCount: Int? = nil,
+        noRecurrence: Bool = false
     ) async throws {
         let reminder = try await findReminder(identifier: identifier)
 
@@ -387,6 +409,24 @@ class ReminderStore {
 
         if let urlString = url, let url = URL(string: urlString) {
             reminder.url = url
+        }
+
+        if noRecurrence {
+            if let rules = reminder.recurrenceRules {
+                for rule in rules {
+                    reminder.removeRecurrenceRule(rule)
+                }
+            }
+        } else if let recurrence = recurrence {
+            // Remove existing rules before adding new one
+            if let rules = reminder.recurrenceRules {
+                for rule in rules {
+                    reminder.removeRecurrenceRule(rule)
+                }
+            }
+            let end = try buildRecurrenceEnd(endDate: recurrenceEnd, count: recurrenceCount)
+            let rule = try RecurrenceParser.parse(from: recurrence, end: end)
+            reminder.addRecurrenceRule(rule)
         }
 
         if let listName = listName {
@@ -723,6 +763,19 @@ class ReminderStore {
         case 6...9: return "Low"
         default: return "None"
         }
+    }
+
+    private func buildRecurrenceEnd(endDate: String?, count: Int?) throws -> EKRecurrenceEnd? {
+        if let endDate = endDate {
+            let components = try DateParser.parseDateComponents(from: endDate)
+            guard let date = Calendar.current.date(from: components) else {
+                throw ReminderStoreError.invalidDateFormat(endDate)
+            }
+            return EKRecurrenceEnd(end: date)
+        } else if let count = count {
+            return EKRecurrenceEnd(occurrenceCount: count)
+        }
+        return nil
     }
 
     private func formatRecurrenceRule(_ rule: EKRecurrenceRule) -> String {

@@ -242,6 +242,15 @@ extension ReminderCLI {
         @Option(name: .shortAndLong, help: "URL associated with the reminder")
         var url: String?
 
+        @Option(name: .shortAndLong, help: "Recurrence rule (daily, weekly, monthly, yearly, \"every N days/weeks\", \"weekly:mon,wed,fri\")")
+        var recurrence: String?
+
+        @Option(help: "Recurrence end date (format: YYYY-MM-DD)")
+        var recurrenceEnd: String?
+
+        @Option(help: "Number of occurrences before recurrence ends")
+        var recurrenceCount: Int?
+
         mutating func run() async throws {
             let store = ReminderStore()
             try await store.requestAccess()
@@ -252,7 +261,10 @@ extension ReminderCLI {
                 startDate: startDate,
                 dueDate: dueDate,
                 priority: priority,
-                url: url
+                url: url,
+                recurrence: recurrence,
+                recurrenceEnd: recurrenceEnd,
+                recurrenceCount: recurrenceCount
             )
         }
     }
@@ -320,6 +332,18 @@ extension ReminderCLI {
         @Option(name: .shortAndLong, help: "Move to a different list")
         var list: String?
 
+        @Option(name: .shortAndLong, help: "Recurrence rule (daily, weekly, monthly, yearly, \"every N days/weeks\", \"weekly:mon,wed,fri\")")
+        var recurrence: String?
+
+        @Option(help: "Recurrence end date (format: YYYY-MM-DD)")
+        var recurrenceEnd: String?
+
+        @Option(help: "Number of occurrences before recurrence ends")
+        var recurrenceCount: Int?
+
+        @Flag(help: "Remove recurrence from the reminder")
+        var noRecurrence: Bool = false
+
         mutating func run() async throws {
             let store = ReminderStore()
             try await store.requestAccess()
@@ -331,7 +355,11 @@ extension ReminderCLI {
                 dueDate: dueDate,
                 priority: priority,
                 url: url,
-                listName: list
+                listName: list,
+                recurrence: recurrence,
+                recurrenceEnd: recurrenceEnd,
+                recurrenceCount: recurrenceCount,
+                noRecurrence: noRecurrence
             )
         }
     }

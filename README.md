@@ -6,8 +6,9 @@ A Swift-based command-line tool to manage iCloud Reminders on macOS.
 
 - 📋 **List** - View all reminders or filter by specific list
 - 🔍 **Show** - Display detailed information about a reminder (including alarms)
-- ➕ **Create** - Add new reminders with notes, URLs, start/due dates, and priority
-- ✏️ **Update** - Modify existing reminders
+- ➕ **Create** - Add new reminders with notes, URLs, start/due dates, priority, and recurrence
+- ✏️ **Update** - Modify existing reminders (including recurrence)
+- 🔁 **Recurrence** - Set daily, weekly, monthly, or yearly recurrence with optional end conditions
 - 🗑️ **Delete** - Remove reminders (with confirmation prompt)
 - ✅ **Complete** - Mark reminders as done
 - 📍 **Location Alarms** - View location-based alarm details
@@ -96,6 +97,32 @@ reminder-cli create "Task" --due-date "2026-01-15 14:30"     # Date and time
 reminder-cli create "Read article" \
   --url "https://example.com/article" \
   --notes "Important article"
+
+# With recurrence (requires --due-date)
+reminder-cli create "Weekly review" \
+  --due-date "2026-01-19" \
+  --recurrence weekly
+
+# Recurrence with specific days
+reminder-cli create "Standup" \
+  --due-date "2026-01-14" \
+  --recurrence "weekly:mon,wed,fri"
+
+# Recurrence with interval
+reminder-cli create "Biweekly report" \
+  --due-date "2026-01-14" \
+  --recurrence "every 2 weeks"
+
+# Recurrence with end date or count
+reminder-cli create "Sprint review" \
+  --due-date "2026-01-14" \
+  --recurrence weekly \
+  --recurrence-end "2026-06-30"
+
+reminder-cli create "Sprint review" \
+  --due-date "2026-01-14" \
+  --recurrence weekly \
+  --recurrence-count 10
 ```
 
 ### Update a reminder
@@ -116,6 +143,13 @@ reminder-cli update 29CC6D52 --priority 1
 reminder-cli update 29CC6D52 \
   --start-date "2026-01-14" \
   --url "https://example.com/store"
+
+# Set or change recurrence
+reminder-cli update 29CC6D52 --recurrence daily
+reminder-cli update 29CC6D52 --recurrence "every 2 weeks:mon,fri"
+
+# Remove recurrence
+reminder-cli update 29CC6D52 --no-recurrence
 ```
 
 ### Complete a reminder
@@ -147,7 +181,7 @@ On first run, reminder-cli will request access to your Reminders. You'll see a s
 
 ## EventKit Limitations
 
-While reminder-cli supports many Reminders.app features, some are not available through Apple's EventKit framework:
+While reminder-cli supports many Reminders.app features (including recurrence rules), some are not available through Apple's EventKit framework:
 
 - **Flags** - The "flagged" indicator is not accessible via EventKit
 - **Tags** - Introduced in iOS 15, but not exposed in EventKit API
