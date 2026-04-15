@@ -1,4 +1,4 @@
-.PHONY: build release install clean help
+.PHONY: build release install update clean help
 
 # Default target
 .DEFAULT_GOAL := help
@@ -24,6 +24,11 @@ install: release ## Build and symlink to ~/bin
 	@rm -f $(INSTALL_PATH)/$(PRODUCT_NAME)
 	@ln -s $(PWD)/$(BUILD_DIR)/release/$(PRODUCT_NAME) $(INSTALL_PATH)/$(PRODUCT_NAME)
 	@echo "✅ Symlinked $(INSTALL_PATH)/$(PRODUCT_NAME) -> $(PWD)/$(BUILD_DIR)/release/$(PRODUCT_NAME)"
+
+update: ## Pull latest and rebuild (symlink stays valid)
+	git pull origin main
+	swift build -c release
+	@echo "✅ Updated to $$(git rev-parse --short HEAD)"
 
 uninstall: ## Remove installed binary
 	@echo "Removing $(INSTALL_PATH)/$(PRODUCT_NAME)..."
