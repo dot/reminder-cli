@@ -579,7 +579,7 @@ class ReminderStore {
     private func buildRecurrenceEnd(endDate: String?, count: Int?) throws -> EKRecurrenceEnd? {
         if let endDate = endDate {
             let components = try parseDateComponents(from: endDate)
-            guard let date = Calendar.current.date(from: components) else {
+            guard let date = RecurrenceParser.endDate(from: components) else {
                 throw ReminderStoreError.invalidDateFormat(endDate)
             }
             return EKRecurrenceEnd(end: date)

@@ -42,6 +42,15 @@ enum RecurrenceParser {
         )
     }
 
+    /// A date-only end is inclusive: EKRecurrenceEnd compares against a concrete instant,
+    /// so midnight would drop a timed occurrence on the last day.
+    static func endDate(from components: DateComponents, calendar: Calendar = .current) -> Date? {
+        guard let date = calendar.date(from: components) else { return nil }
+        guard components.hour == nil else { return date }
+        let startOfDay = calendar.startOfDay(for: date)
+        return calendar.date(byAdding: DateComponents(day: 1, second: -1), to: startOfDay)
+    }
+
     private static func parseFrequency(_ string: String) throws -> (EKRecurrenceFrequency, Int) {
         // Simple: "daily", "weekly", "monthly", "yearly"
         if let freq = frequencyFromString(string) {

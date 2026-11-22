@@ -53,3 +53,26 @@ final class RecurrenceParserTests: XCTestCase {
         XCTAssertThrowsError(try RecurrenceParser.parse(from: "every 0 days"))
     }
 }
+
+final class RecurrenceEndDateTests: XCTestCase {
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+        return calendar
+    }
+
+    func testDateOnlyEndIncludesTheWholeLastDay() throws {
+        let end = try XCTUnwrap(RecurrenceParser.endDate(
+            from: DateComponents(year: 2026, month: 12, day: 10), calendar: calendar
+        ))
+        let lastOccurrence = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 12, day: 10, hour: 23, minute: 59)))
+        let nextDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 12, day: 11)))
+        XCTAssertGreaterThanOrEqual(end, lastOccurrence)
+        XCTAssertLessThan(end, nextDay)
+    }
+
+    func testTimedEndIsUsedAsGiven() throws {
+        let components = DateComponents(year: 2026, month: 12, day: 10, hour: 18, minute: 0)
+        XCTAssertEqual(RecurrenceParser.endDate(from: components, calendar: calendar), calendar.date(from: components))
+    }
+}
