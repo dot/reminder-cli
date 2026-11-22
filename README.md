@@ -17,6 +17,7 @@ A Swift-based command-line tool to manage iCloud Reminders on macOS.
 ## Requirements
 
 - macOS 13.0 or later
+- Apple Silicon Mac (arm64) only — Intel Macs are not supported
 - Swift 5.9 or later (swift-tools-version 5.9)
 - Xcode (for building)
 
