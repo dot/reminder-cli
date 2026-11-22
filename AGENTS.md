@@ -1,0 +1,115 @@
+# AGENTS.md - Development Guidelines for reminder-cli
+
+This document contains development conventions and guidelines for the reminder-cli project when working with Claude Code.
+
+## Version Management and Release Process
+
+### Release Candidate (RC) Workflow
+
+When implementing new features or making changes:
+
+1. **Start with RC version**
+   - Increment the patch version and add `-rc1` suffix
+   - Example: If current version is `0.1.1`, start with `0.1.2-rc1`
+   - Update version in:
+     - `Sources/reminder-cli/reminder_cli.swift` (CommandConfiguration version)
+     - Any other version references
+
+2. **During development and testing**
+   - Keep the `-rc1` suffix while testing
+   - If further changes are needed, increment RC number: `-rc2`, `-rc3`, etc.
+   - Build and test thoroughly with the RC version
+
+3. **After confirming everything works**
+   - Remove the RC suffix (e.g., `0.1.2-rc1` → `0.1.2`)
+   - Update version in all relevant files
+   - Create a git commit with the changes
+   - Create and push a git tag for the release
+
+### Example Workflow
+
+```bash
+# 1. Update version to RC in source files
+# Set version to "0.1.2-rc1" in reminder_cli.swift
+
+# 2. Build and test
+make build
+make test  # or manual testing
+
+# 3. If everything works, remove RC suffix
+# Change version to "0.1.2" in reminder_cli.swift
+
+# 4. Commit and tag
+git add .
+git commit -m "Release v0.1.2: Add output format options (json, yaml, pretty-json)"
+git tag v0.1.2
+git push origin main
+git push origin v0.1.2
+```
+
+## Project Structure
+
+- `Sources/reminder-cli/reminder_cli.swift` - CLI command structure and argument parsing
+- `Sources/reminder-cli/ReminderStore.swift` - EventKit business logic
+- `Sources/reminder-cli/OutputFormatter.swift` - Output format handling (text, json, yaml)
+- `Package.swift` - Swift package configuration
+- `Makefile` - Build automation
+
+## EventKit API Limitations
+
+Some Reminders.app features (Flags, Tags, Sections, Attachments, etc.) are NOT available through Apple's EventKit framework. See README.md for the full list and details.
+
+## Code Style
+
+- Use Swift 5 language mode (set in Package.swift) to avoid EventKit concurrency issues
+- Follow existing code patterns for consistency
+- Keep error handling informative and user-friendly
+- Use emoji sparingly in output (only where it adds clarity)
+
+## Dependencies and CI
+
+- Dependency and GitHub Actions bumps are handled by Dependabot (`.github/dependabot.yml`, weekly). Don't mix bumps into toolchain-maintenance commits; they were verified to be independent (e.g. Swift 6.4 Sendable fixes don't need dependency updates).
+- CI's `xcode-version` is limited by what GitHub-hosted runners ship (`macos-latest` = macos-26-arm64, up to Xcode 26.6 as of 2026-11-22), even if local development uses a newer Xcode. A weekly T3 scheduled task watches for Xcode 27 on the runners and opens a draft PR when it lands.
+- Only Apple Silicon (arm64) is supported; release binaries are arm64-only. The minimum OS is set by `platforms: [.macOS(.v13)]` in `Package.swift`, not by the Xcode version.
+
+## Installation
+
+The project uses symlinks for installation rather than copying binaries:
+
+```bash
+# Install creates a symlink from ~/bin/reminder-cli to .build/release/reminder-cli
+make install
+
+# This means you only need to rebuild to update the installed version
+swift build -c release  # Changes are immediately reflected
+```
+
+**Important**: Don't run `swift package clean` or delete `.build/release` while using the symlinked binary.
+
+## Testing
+
+Before creating a release:
+
+1. Test all CRUD operations (List, Show, Create, Update, Delete, Complete)
+2. Test all output formats (text, json, pretty-json, yaml)
+3. Verify the CLI works with `make run`
+4. Check that `make install` creates the symlink correctly
+5. Test with real iCloud Reminders data
+
+## Commit Message Format
+
+Use descriptive commit messages that explain what changed and why:
+
+```
+Add feature: Brief description of the feature
+
+- Detail 1
+- Detail 2
+
+```
+
+For releases:
+```
+Release v0.1.2: Brief summary of main changes
+
+```
