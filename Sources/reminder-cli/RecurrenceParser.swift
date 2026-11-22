@@ -11,9 +11,12 @@ enum RecurrenceParser {
     /// - `"every 2 weeks:mon,fri"` (interval + days)
     static func parse(from string: String, end: EKRecurrenceEnd? = nil) throws -> EKRecurrenceRule {
         let input = string.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !input.isEmpty else {
+            throw ReminderStoreError.invalidRecurrence(string)
+        }
 
-        // Split on ":" to separate frequency from days
-        let parts = input.split(separator: ":", maxSplits: 1)
+        // Split on ":" to separate frequency from days; keep empty pieces so "weekly:" is rejected
+        let parts = input.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
         let frequencyPart = String(parts[0]).trimmingCharacters(in: .whitespaces)
         let daysPart = parts.count > 1 ? String(parts[1]).trimmingCharacters(in: .whitespaces) : nil
 
@@ -82,7 +85,10 @@ enum RecurrenceParser {
     }
 
     private static func parseDaysOfWeek(_ string: String) throws -> [EKRecurrenceDayOfWeek] {
-        let dayStrings = string.split(separator: ",").map {
+        guard !string.isEmpty else {
+            throw ReminderStoreError.invalidRecurrence("No days specified")
+        }
+        let dayStrings = string.split(separator: ",", omittingEmptySubsequences: false).map {
             $0.trimmingCharacters(in: .whitespaces)
         }
 
@@ -93,10 +99,6 @@ enum RecurrenceParser {
                 )
             }
             return day
-        }
-
-        if days.isEmpty {
-            throw ReminderStoreError.invalidRecurrence("No days specified")
         }
 
         return days
