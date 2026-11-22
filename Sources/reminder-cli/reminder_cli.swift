@@ -52,6 +52,22 @@ struct ReminderCLI: AsyncParsableCommand {
     )
 }
 
+// MARK: - Recurrence Option Validation
+
+/// Rejects end conditions that EventKit would silently ignore or crash on
+/// (EKRecurrenceEnd(occurrenceCount:) raises an Objective-C exception for counts below 1).
+func validateRecurrenceOptions(recurrence: String?, recurrenceEnd: String?, recurrenceCount: Int?) throws {
+    if recurrence == nil && (recurrenceEnd != nil || recurrenceCount != nil) {
+        throw ValidationError("--recurrence-end and --recurrence-count require --recurrence")
+    }
+    if recurrenceEnd != nil && recurrenceCount != nil {
+        throw ValidationError("--recurrence-end and --recurrence-count cannot be used together")
+    }
+    if let count = recurrenceCount, count < 1 {
+        throw ValidationError("--recurrence-count must be 1 or greater")
+    }
+}
+
 // MARK: - Sort Option
 
 enum SortOption: String, ExpressibleByArgument {
@@ -265,6 +281,12 @@ extension ReminderCLI {
         @Option(name: .shortAndLong, help: "Output format (text, json, pretty-json, yaml)")
         var format: OutputFormat = .text
 
+        func validate() throws {
+            try validateRecurrenceOptions(
+                recurrence: recurrence, recurrenceEnd: recurrenceEnd, recurrenceCount: recurrenceCount
+            )
+        }
+
         mutating func run() async throws {
             let store = ReminderStore()
             try await store.requestAccess()
@@ -361,6 +383,15 @@ extension ReminderCLI {
 
         @Option(name: .shortAndLong, help: "Output format (text, json, pretty-json, yaml)")
         var format: OutputFormat = .text
+
+        func validate() throws {
+            if noRecurrence && recurrence != nil {
+                throw ValidationError("--recurrence and --no-recurrence cannot be used together")
+            }
+            try validateRecurrenceOptions(
+                recurrence: recurrence, recurrenceEnd: recurrenceEnd, recurrenceCount: recurrenceCount
+            )
+        }
 
         mutating func run() async throws {
             let store = ReminderStore()
