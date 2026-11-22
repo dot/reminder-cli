@@ -357,8 +357,7 @@ class ReminderStore {
         if let dueDateString = dueDate {
             let components = try parseDateComponents(from: dueDateString)
             reminder.dueDateComponents = components
-            // EventKit doesn't notify on dueDate alone; an explicit alarm is required
-            if components.hour != nil {
+            if DueDateAlarm.needsAlarm(for: components) {
                 reminder.addAlarm(EKAlarm(relativeOffset: 0))
             }
         }
@@ -431,10 +430,9 @@ class ReminderStore {
         if let dueDateString = dueDate {
             let components = try parseDateComponents(from: dueDateString)
             reminder.dueDateComponents = components
-            // EventKit doesn't notify on dueDate alone; an explicit alarm is required
-            if components.hour != nil {
-                // Remove existing alarms to avoid duplicates on repeated updates
-                reminder.alarms?.forEach { reminder.removeAlarm($0) }
+            DueDateAlarm.alarmsToRemove(from: reminder.alarms ?? [], newDueDate: components)
+                .forEach { reminder.removeAlarm($0) }
+            if DueDateAlarm.needsAlarm(for: components) {
                 reminder.addAlarm(EKAlarm(relativeOffset: 0))
             }
         }
