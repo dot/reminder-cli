@@ -430,7 +430,7 @@ class ReminderStore {
         if let dueDateString = dueDate {
             let components = try parseDateComponents(from: dueDateString)
             reminder.dueDateComponents = components
-            DueDateAlarm.alarmsToRemove(from: reminder.alarms ?? [], newDueDate: components)
+            DueDateAlarm.alarmsToRemove(from: reminder.alarms ?? [])
                 .forEach { reminder.removeAlarm($0) }
             if DueDateAlarm.needsAlarm(for: components) {
                 reminder.addAlarm(EKAlarm(relativeOffset: 0))

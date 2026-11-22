@@ -8,14 +8,11 @@ enum DueDateAlarm {
         dueDate.hour != nil
     }
 
-    static func alarmsToRemove(from alarms: [EKAlarm], newDueDate: DateComponents) -> [EKAlarm] {
-        if needsAlarm(for: newDueDate) {
-            // Replaced by a fresh at-due-time alarm, so repeated updates don't stack duplicates
-            return alarms
-        }
-        // Only the at-due-time alarm depends on the due time; location, absolute,
-        // and offset alarms are user-defined and stay meaningful without it
-        return alarms.filter(isAtDueTime)
+    /// Alarms to drop whenever the due date changes. Only the at-due-time alarm is managed:
+    /// it is re-added for a timed due date (so repeated updates don't stack duplicates) and
+    /// is meaningless without a time. Location, absolute, and offset alarms are user-defined.
+    static func alarmsToRemove(from alarms: [EKAlarm]) -> [EKAlarm] {
+        alarms.filter(isAtDueTime)
     }
 
     private static func isAtDueTime(_ alarm: EKAlarm) -> Bool {

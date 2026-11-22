@@ -3,41 +3,28 @@ import XCTest
 @testable import reminder_cli
 
 final class DueDateAlarmTests: XCTestCase {
-    private let dateOnly = DateComponents(year: 2026, month: 12, day: 3)
-    private let timed = DateComponents(year: 2026, month: 12, day: 3, hour: 9, minute: 0)
-
     func testTimedDueDateNeedsAlarm() {
+        let timed = DateComponents(year: 2026, month: 12, day: 3, hour: 9, minute: 0)
         XCTAssertTrue(DueDateAlarm.needsAlarm(for: timed))
     }
 
     func testDateOnlyDueDateDoesNotNeedAlarm() {
+        let dateOnly = DateComponents(year: 2026, month: 12, day: 3)
         XCTAssertFalse(DueDateAlarm.needsAlarm(for: dateOnly))
     }
 
-    func testChangingToDateOnlyDueDropsAtDueTimeAlarm() {
+    func testDueDateChangeDropsAtDueTimeAlarm() {
         let atDueTime = EKAlarm(relativeOffset: 0)
-        let removed = DueDateAlarm.alarmsToRemove(from: [atDueTime], newDueDate: dateOnly)
-        XCTAssertEqual(removed, [atDueTime])
+        XCTAssertEqual(DueDateAlarm.alarmsToRemove(from: [atDueTime]), [atDueTime])
     }
 
-    func testChangingToDateOnlyDueKeepsUserDefinedAlarms() {
+    func testDueDateChangeKeepsUserDefinedAlarms() {
         let tenMinutesBefore = EKAlarm(relativeOffset: -600)
         let absolute = EKAlarm(absoluteDate: Date(timeIntervalSince1970: 1_800_000_000))
         let location = EKAlarm(relativeOffset: 0)
         location.structuredLocation = EKStructuredLocation(title: "Office")
         location.proximity = .enter
 
-        let removed = DueDateAlarm.alarmsToRemove(
-            from: [tenMinutesBefore, absolute, location],
-            newDueDate: dateOnly
-        )
-        XCTAssertEqual(removed, [])
-    }
-
-    func testChangingToTimedDueReplacesAllAlarms() {
-        let atDueTime = EKAlarm(relativeOffset: 0)
-        let tenMinutesBefore = EKAlarm(relativeOffset: -600)
-        let removed = DueDateAlarm.alarmsToRemove(from: [atDueTime, tenMinutesBefore], newDueDate: timed)
-        XCTAssertEqual(removed, [atDueTime, tenMinutesBefore])
+        XCTAssertEqual(DueDateAlarm.alarmsToRemove(from: [tenMinutesBefore, absolute, location]), [])
     }
 }
