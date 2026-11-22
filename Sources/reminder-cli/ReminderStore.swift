@@ -2,15 +2,23 @@
 import Foundation
 
 enum ReminderStoreError: LocalizedError {
+    struct Match: Sendable {
+        let id: String
+        let title: String?
+    }
+
     case accessDenied
     case reminderNotFound(String)
-    case ambiguousIdentifier(String, [EKReminder])
+    case ambiguousIdentifier(String, [Match])
     case listNotFound(String)
     case noAvailableLists
     case invalidDateFormat(String)
     case invalidPriority(Int)
+    case ambiguousListName(String, [Match])
     case listAlreadyExists(String)
-    case cannotDeleteList(String)
+    case listNotDeletable(String)
+    case invalidListName
+    case noSourceForNewList
     case invalidRecurrence(String)
     case recurrenceRequiresDueDate
 
@@ -22,11 +30,10 @@ enum ReminderStoreError: LocalizedError {
             return "Reminder not found: \(identifier)"
         case .ambiguousIdentifier(let identifier, let matches):
             var message = "Ambiguous identifier '\(identifier)' matches \(matches.count) reminders:\n"
-            for reminder in matches {
-                let title = reminder.title ?? "(no title)"
-                let fullID = reminder.calendarItemIdentifier
-                let shortID = String(fullID.prefix(8))
-                message += "  [\(shortID)] \(fullID) - \(title)\n"
+            for match in matches {
+                let title = match.title ?? "(no title)"
+                let shortID = String(match.id.prefix(8))
+                message += "  [\(shortID)] \(match.id) - \(title)\n"
             }
             message += "\nPlease use a longer prefix (e.g., 9+ characters) or the full ID."
             return message
@@ -38,10 +45,21 @@ enum ReminderStoreError: LocalizedError {
             return "Invalid date format: \(format). Use YYYY-MM-DD or YYYY-MM-DD HH:MM"
         case .invalidPriority(let priority):
             return "Invalid priority: \(priority). Use 0-9 (0=none, 1-4=high, 5=medium, 6-9=low)"
+        case .ambiguousListName(let name, let matches):
+            var message = "Ambiguous list name '\(name)' matches \(matches.count) lists:\n"
+            for match in matches {
+                message += "  \(match.id) - \(match.title ?? "(no title)")\n"
+            }
+            message += "\nPlease specify the list by its calendarIdentifier (see `reminder-cli lists --format json`)."
+            return message
         case .listAlreadyExists(let name):
             return "List already exists: \(name)"
-        case .cannotDeleteList(let name):
-            return "Failed to delete list: \(name)"
+        case .listNotDeletable(let name):
+            return "List cannot be deleted (it is read-only or managed by its account): \(name)"
+        case .invalidListName:
+            return "List name must not be empty"
+        case .noSourceForNewList:
+            return "No account is available to create a new list in. Please check your Reminders accounts in System Settings."
         case .invalidRecurrence(let value):
             return "Invalid recurrence: \(value). Use: daily, weekly, monthly, yearly, \"every N days/weeks/months/years\", or \"weekly:mon,wed,fri\""
         case .recurrenceRequiresDueDate:
@@ -84,32 +102,13 @@ class ReminderStore {
     }
 
     private func getReminderStatus(_ reminder: EKReminder) -> ReminderStatus {
-        if reminder.isCompleted {
-            return .completed
+        switch ReminderSorting.status(isCompleted: reminder.isCompleted, dueDate: reminder.dueDateComponents?.date) {
+        case .completed: return .completed
+        case .overdue: return .overdue
+        case .dueToday: return .dueToday
+        case .scheduled: return .scheduled
+        case .pending: return .pending
         }
-
-        guard let dueDate = reminder.dueDateComponents?.date else {
-            return .pending
-        }
-
-        let calendar = Calendar.current
-        let now = Date()
-
-        // Check if overdue (due date is in the past)
-        if dueDate < now {
-            // Consider it overdue if it's not today
-            if !calendar.isDateInToday(dueDate) {
-                return .overdue
-            }
-        }
-
-        // Check if due today
-        if calendar.isDateInToday(dueDate) {
-            return .dueToday
-        }
-
-        // Future due date
-        return .scheduled
     }
 
     func requestAccess() async throws {
@@ -202,82 +201,103 @@ class ReminderStore {
         }
     }
 
-    // MARK: - Lists Operations
+    // MARK: - Lists Operation
 
-    func showAllLists(format: OutputFormat = .text) async throws {
+    func listCalendars(includeCount: Bool, format: OutputFormat = .text) async throws {
         let calendars = eventStore.calendars(for: .reminder)
+        let formatter = OutputFormatter(format: format)
+
+        var outputs: [ListOutput] = []
+        for calendar in calendars {
+            var count: Int?
+            if includeCount {
+                let predicate = eventStore.predicateForReminders(in: [calendar])
+                count = try await fetchReminders(matching: predicate).count
+            }
+            outputs.append(formatter.convertCalendar(calendar, reminderCount: count))
+        }
 
         if format == .text {
-            print("\n📋 Reminder Lists")
+            print("\n📋 Lists")
             print("─────────────────────────────────────")
+        }
+        try formatter.output(lists: outputs)
+    }
+    // MARK: - List Management Operations
 
-            for calendar in calendars {
-                let predicate = eventStore.predicateForReminders(in: [calendar])
-                let reminders = try await fetchReminders(matching: predicate)
-                let incompleteCount = reminders.filter { !$0.isCompleted }.count
-                let isDefault = calendar == eventStore.defaultCalendarForNewReminders()
-                let defaultMark = isDefault ? " (default)" : ""
-                print("  \(calendar.title)\(defaultMark) — \(incompleteCount) reminder(s)")
-            }
-            print()
+    func createList(name: String, format: OutputFormat = .text) throws {
+        let calendars = eventStore.calendars(for: .reminder)
+        let title = try ListMatcher.validateNewName(name, existing: calendars.map(listCandidate))
+
+        guard let source = preferredSourceForNewList(existing: calendars) else {
+            throw ReminderStoreError.noSourceForNewList
+        }
+
+        let calendar = EKCalendar(for: .reminder, eventStore: eventStore)
+        calendar.title = title
+        calendar.source = source
+        try eventStore.saveCalendar(calendar, commit: true)
+
+        if format == .text {
+            print("✅ Created list: \(calendar.title)")
         } else {
-            var listOutputs: [[String: Any]] = []
-            for calendar in calendars {
-                let predicate = eventStore.predicateForReminders(in: [calendar])
-                let reminders = try await fetchReminders(matching: predicate)
-                let incompleteCount = reminders.filter { !$0.isCompleted }.count
-                let isDefault = calendar == eventStore.defaultCalendarForNewReminders()
-                listOutputs.append([
-                    "name": calendar.title,
-                    "reminderCount": incompleteCount,
-                    "isDefault": isDefault,
-                ])
-            }
-
             let formatter = OutputFormatter(format: format)
-            try formatter.outputLists(listOutputs)
+            try formatter.output(list: formatter.convertCalendar(calendar, reminderCount: nil))
         }
     }
 
-    func createList(name: String) throws {
-        if findCalendar(named: name) != nil {
-            throw ReminderStoreError.listAlreadyExists(name)
+    func deleteList(_ query: String, force: Bool, format: OutputFormat = .text) async throws {
+        let calendars = eventStore.calendars(for: .reminder)
+        let match = try ListMatcher.resolve(query, in: calendars.map(listCandidate))
+        guard let calendar = calendars.first(where: { $0.calendarIdentifier == match.id }) else {
+            throw ReminderStoreError.listNotFound(query)
+        }
+        guard !calendar.isImmutable else {
+            throw ReminderStoreError.listNotDeletable(calendar.title)
         }
 
-        let newCalendar = EKCalendar(for: .reminder, eventStore: eventStore)
-        newCalendar.title = name
-
-        if let defaultCalendar = eventStore.defaultCalendarForNewReminders() {
-            newCalendar.source = defaultCalendar.source
-        } else if let source = eventStore.sources.first(where: { $0.sourceType == .calDAV }) {
-            newCalendar.source = source
-        } else if let source = eventStore.sources.first(where: { $0.sourceType == .local }) {
-            newCalendar.source = source
-        }
-
-        try eventStore.saveCalendar(newCalendar, commit: true)
-        print("✅ Created list: \(name)")
-    }
-
-    func deleteList(name: String, force: Bool) throws {
-        guard let calendar = findCalendar(named: name) else {
-            throw ReminderStoreError.listNotFound(name)
-        }
+        let title = calendar.title
+        let id = calendar.calendarIdentifier
 
         if !force {
-            print("Are you sure you want to delete list '\(calendar.title)' and all its reminders? [y/N]: ", terminator: "")
+            let count = try await fetchReminders(matching: eventStore.predicateForReminders(in: [calendar])).count
+            if calendar.calendarIdentifier == eventStore.defaultCalendarForNewReminders()?.calendarIdentifier {
+                print("⚠️  '\(title)' is your default list for new reminders.")
+            }
+            print("Delete list '\(title)' and its \(count) reminder(s)? This cannot be undone. [y/N]: ", terminator: "")
             guard let response = readLine()?.lowercased(), response == "y" || response == "yes" else {
                 print("Cancelled.")
                 return
             }
         }
 
-        do {
-            try eventStore.removeCalendar(calendar, commit: true)
-            print("🗑️  Deleted list: \(name)")
-        } catch {
-            throw ReminderStoreError.cannotDeleteList(name)
+        try eventStore.removeCalendar(calendar, commit: true)
+
+        if format == .text {
+            print("🗑️  Deleted list: \(title)")
+        } else {
+            let formatter = OutputFormatter(format: format)
+            try formatter.output(deleteConfirmation: DeleteConfirmationOutput(deleted: true, id: id, title: title))
         }
+    }
+
+    /// Picks the account (EKSource) a new list should live in: the account of
+    /// the default reminders list; otherwise an account that already holds
+    /// reminder lists; and as a last resort (e.g. no lists exist at all) any
+    /// account. CalDAV (iCloud) is preferred over local at each step.
+    private func preferredSourceForNewList(existing calendars: [EKCalendar]) -> EKSource? {
+        if let source = eventStore.defaultCalendarForNewReminders()?.source {
+            return source
+        }
+        func pick(_ sources: [EKSource]) -> EKSource? {
+            sources.first(where: { $0.sourceType == .calDAV })
+                ?? sources.first(where: { $0.sourceType == .local })
+        }
+        return pick(calendars.compactMap(\.source)) ?? pick(eventStore.sources)
+    }
+
+    private func listCandidate(_ calendar: EKCalendar) -> ListMatcher.Candidate {
+        ListMatcher.Candidate(id: calendar.calendarIdentifier, title: calendar.title)
     }
 
     // MARK: - Show Operation
@@ -306,7 +326,8 @@ class ReminderStore {
         url: String?,
         recurrence: String? = nil,
         recurrenceEnd: String? = nil,
-        recurrenceCount: Int? = nil
+        recurrenceCount: Int? = nil,
+        format: OutputFormat = .text
     ) async throws {
         let calendar: EKCalendar
         if let listName = listName {
@@ -330,13 +351,13 @@ class ReminderStore {
         reminder.notes = notes
 
         if let startDateString = startDate {
-            reminder.startDateComponents = try DateParser.parseDateComponents(from: startDateString)
+            reminder.startDateComponents = try parseDateComponents(from: startDateString)
         }
 
         if let dueDateString = dueDate {
-            let components = try DateParser.parseDateComponents(from: dueDateString)
+            let components = try parseDateComponents(from: dueDateString)
             reminder.dueDateComponents = components
-            // Add alarm when due date includes time, so iOS/macOS shows a notification
+            // EventKit doesn't notify on dueDate alone; an explicit alarm is required
             if components.hour != nil {
                 reminder.addAlarm(EKAlarm(relativeOffset: 0))
             }
@@ -364,10 +385,15 @@ class ReminderStore {
 
         try eventStore.save(reminder, commit: true)
 
-        print("✅ Created reminder: \(title)")
-        print("   ID: \(reminder.calendarItemIdentifier)")
-        if let list = reminder.calendar?.title {
-            print("   List: \(list)")
+        if format == .text {
+            print("✅ Created reminder: \(title)")
+            print("   ID: \(reminder.calendarItemIdentifier)")
+            if let list = reminder.calendar?.title {
+                print("   List: \(list)")
+            }
+        } else {
+            let formatter = OutputFormatter(format: format)
+            try formatter.output(reminder: formatter.convertReminder(reminder))
         }
     }
 
@@ -385,7 +411,8 @@ class ReminderStore {
         recurrence: String? = nil,
         recurrenceEnd: String? = nil,
         recurrenceCount: Int? = nil,
-        noRecurrence: Bool = false
+        noRecurrence: Bool = false,
+        format: OutputFormat = .text
     ) async throws {
         let reminder = try await findReminder(identifier: identifier)
 
@@ -398,13 +425,13 @@ class ReminderStore {
         }
 
         if let startDateString = startDate {
-            reminder.startDateComponents = try DateParser.parseDateComponents(from: startDateString)
+            reminder.startDateComponents = try parseDateComponents(from: startDateString)
         }
 
         if let dueDateString = dueDate {
-            let components = try DateParser.parseDateComponents(from: dueDateString)
+            let components = try parseDateComponents(from: dueDateString)
             reminder.dueDateComponents = components
-            // Add alarm when due date includes time, so iOS/macOS shows a notification
+            // EventKit doesn't notify on dueDate alone; an explicit alarm is required
             if components.hour != nil {
                 // Remove existing alarms to avoid duplicates on repeated updates
                 reminder.alarms?.forEach { reminder.removeAlarm($0) }
@@ -423,19 +450,10 @@ class ReminderStore {
             reminder.url = url
         }
 
-        if noRecurrence {
-            if let rules = reminder.recurrenceRules {
-                for rule in rules {
-                    reminder.removeRecurrenceRule(rule)
-                }
-            }
-        } else if let recurrence = recurrence {
-            // Remove existing rules before adding new one
-            if let rules = reminder.recurrenceRules {
-                for rule in rules {
-                    reminder.removeRecurrenceRule(rule)
-                }
-            }
+        if noRecurrence || recurrence != nil {
+            reminder.recurrenceRules?.forEach { reminder.removeRecurrenceRule($0) }
+        }
+        if !noRecurrence, let recurrence = recurrence {
             let end = try buildRecurrenceEnd(endDate: recurrenceEnd, count: recurrenceCount)
             let rule = try RecurrenceParser.parse(from: recurrence, end: end)
             reminder.addRecurrenceRule(rule)
@@ -450,20 +468,27 @@ class ReminderStore {
 
         try eventStore.save(reminder, commit: true)
 
-        var message = "✅ Updated reminder: \(reminder.title ?? "(no title)")"
-        if let listName = listName {
-            message += " → moved to \(listName)"
+        if format == .text {
+            var message = "✅ Updated reminder: \(reminder.title ?? "(no title)")"
+            if listName != nil {
+                message += " → moved to \(reminder.calendar.title)"
+            }
+            print(message)
+        } else {
+            let formatter = OutputFormatter(format: format)
+            try formatter.output(reminder: formatter.convertReminder(reminder))
         }
-        print(message)
     }
 
     // MARK: - Delete Operation
 
-    func deleteReminder(identifier: String, force: Bool) async throws {
+    func deleteReminder(identifier: String, force: Bool, format: OutputFormat = .text) async throws {
         let reminder = try await findReminder(identifier: identifier)
+        let title = reminder.title ?? "(no title)"
+        let id = reminder.calendarItemIdentifier
 
         if !force {
-            print("Are you sure you want to delete '\(reminder.title ?? "(no title)")'? [y/N]: ", terminator: "")
+            print("Are you sure you want to delete '\(title)'? [y/N]: ", terminator: "")
             guard let response = readLine()?.lowercased(), response == "y" || response == "yes" else {
                 print("Cancelled.")
                 return
@@ -471,18 +496,29 @@ class ReminderStore {
         }
 
         try eventStore.remove(reminder, commit: true)
-        print("🗑️  Deleted reminder: \(reminder.title ?? "(no title)")")
+
+        if format == .text {
+            print("🗑️  Deleted reminder: \(title)")
+        } else {
+            let formatter = OutputFormatter(format: format)
+            try formatter.output(deleteConfirmation: DeleteConfirmationOutput(deleted: true, id: id, title: title))
+        }
     }
 
     // MARK: - Complete Operation
 
-    func completeReminder(identifier: String) async throws {
+    func completeReminder(identifier: String, format: OutputFormat = .text) async throws {
         let reminder = try await findReminder(identifier: identifier)
 
         reminder.isCompleted = true
         try eventStore.save(reminder, commit: true)
 
-        print("✅ Completed reminder: \(reminder.title ?? "(no title)")")
+        if format == .text {
+            print("✅ Completed reminder: \(reminder.title ?? "(no title)")")
+        } else {
+            let formatter = OutputFormatter(format: format)
+            try formatter.output(reminder: formatter.convertReminder(reminder))
+        }
     }
 
     // MARK: - Helper Methods
@@ -527,90 +563,36 @@ class ReminderStore {
         if matches.count == 1 {
             return matches[0]
         } else if matches.count > 1 {
-            throw ReminderStoreError.ambiguousIdentifier(identifier, matches)
+            throw ReminderStoreError.ambiguousIdentifier(identifier, matches.map {
+                .init(id: $0.calendarItemIdentifier, title: $0.title)
+            })
         }
 
         throw ReminderStoreError.reminderNotFound(identifier)
     }
 
+    private func parseDateComponents(from string: String) throws -> DateComponents {
+        guard let components = DateParsing.parse(string) else {
+            throw ReminderStoreError.invalidDateFormat(string)
+        }
+        return components
+    }
+
+    private func buildRecurrenceEnd(endDate: String?, count: Int?) throws -> EKRecurrenceEnd? {
+        if let endDate = endDate {
+            let components = try parseDateComponents(from: endDate)
+            guard let date = Calendar.current.date(from: components) else {
+                throw ReminderStoreError.invalidDateFormat(endDate)
+            }
+            return EKRecurrenceEnd(end: date)
+        } else if let count = count {
+            return EKRecurrenceEnd(occurrenceCount: count)
+        }
+        return nil
+    }
+
     private func sortReminders(by sortOption: SortOption) -> (EKReminder, EKReminder) -> Bool {
-        return { lhs, rhs in
-            // Always sort completed reminders to the end
-            if lhs.isCompleted != rhs.isCompleted {
-                return !lhs.isCompleted
-            }
-
-            switch sortOption {
-            case .dueDate:
-                return self.sortByDueDate(lhs, rhs)
-            case .priority:
-                return self.sortByPriority(lhs, rhs)
-            case .title:
-                return self.sortByTitle(lhs, rhs)
-            case .created:
-                return self.sortByCreated(lhs, rhs)
-            case .status:
-                return self.sortByStatus(lhs, rhs)
-            }
-        }
-    }
-
-    private func sortByDueDate(_ lhs: EKReminder, _ rhs: EKReminder) -> Bool {
-        if let lhsDate = lhs.dueDateComponents?.date, let rhsDate = rhs.dueDateComponents?.date {
-            return lhsDate < rhsDate
-        }
-        if lhs.dueDateComponents != nil {
-            return true
-        }
-        if rhs.dueDateComponents != nil {
-            return false
-        }
-        return sortByTitle(lhs, rhs)
-    }
-
-    private func sortByPriority(_ lhs: EKReminder, _ rhs: EKReminder) -> Bool {
-        if lhs.priority != rhs.priority {
-            // Lower number = higher priority (1=high, 5=medium, 9=low, 0=none)
-            // Sort: high (1-4) → medium (5) → low (6-9) → none (0)
-            if lhs.priority == 0 { return false }
-            if rhs.priority == 0 { return true }
-            return lhs.priority < rhs.priority
-        }
-        return sortByDueDate(lhs, rhs)
-    }
-
-    private func sortByTitle(_ lhs: EKReminder, _ rhs: EKReminder) -> Bool {
-        return (lhs.title ?? "").lowercased() < (rhs.title ?? "").lowercased()
-    }
-
-    private func sortByCreated(_ lhs: EKReminder, _ rhs: EKReminder) -> Bool {
-        if let lhsDate = lhs.creationDate, let rhsDate = rhs.creationDate {
-            return lhsDate > rhsDate // Newer first
-        }
-        if lhs.creationDate != nil {
-            return true
-        }
-        if rhs.creationDate != nil {
-            return false
-        }
-        return sortByTitle(lhs, rhs)
-    }
-
-    private func sortByStatus(_ lhs: EKReminder, _ rhs: EKReminder) -> Bool {
-        let lhsStatus = getReminderStatus(lhs)
-        let rhsStatus = getReminderStatus(rhs)
-
-        // Define priority order for statuses
-        let statusOrder: [ReminderStatus] = [.overdue, .dueToday, .scheduled, .pending, .completed]
-
-        if let lhsIndex = statusOrder.firstIndex(of: lhsStatus),
-           let rhsIndex = statusOrder.firstIndex(of: rhsStatus) {
-            if lhsIndex != rhsIndex {
-                return lhsIndex < rhsIndex
-            }
-        }
-
-        return sortByDueDate(lhs, rhs)
+        return ReminderSorting.comparator(for: sortOption)
     }
 
     private func printReminderSummary(_ reminder: EKReminder) {
@@ -775,19 +757,6 @@ class ReminderStore {
         case 6...9: return "Low"
         default: return "None"
         }
-    }
-
-    private func buildRecurrenceEnd(endDate: String?, count: Int?) throws -> EKRecurrenceEnd? {
-        if let endDate = endDate {
-            let components = try DateParser.parseDateComponents(from: endDate)
-            guard let date = Calendar.current.date(from: components) else {
-                throw ReminderStoreError.invalidDateFormat(endDate)
-            }
-            return EKRecurrenceEnd(end: date)
-        } else if let count = count {
-            return EKRecurrenceEnd(occurrenceCount: count)
-        }
-        return nil
     }
 
     private func formatRecurrenceRule(_ rule: EKRecurrenceRule) -> String {

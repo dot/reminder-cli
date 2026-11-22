@@ -38,15 +38,15 @@ struct ReminderCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "reminder-cli",
         abstract: "A CLI tool to manage iCloud Reminders",
-        version: "1.0.2",
+        version: "1.2.1-rc1",
         subcommands: [
             List.self,
-            Lists.self,
             Show.self,
             Create.self,
             Update.self,
             Delete.self,
             Complete.self,
+            Lists.self,
             CompleteIDs.self
         ]
     )
@@ -89,66 +89,6 @@ extension ReminderCLI {
                 try await store.listReminders(in: listName, showCompleted: completed, format: format, sortBy: sort)
             } else {
                 try await store.listAllReminders(showCompleted: completed, format: format, sortBy: sort)
-            }
-        }
-    }
-}
-
-// MARK: - Lists Command Group
-extension ReminderCLI {
-    struct Lists: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(
-            abstract: "Manage reminder lists",
-            subcommands: [ListAll.self, Create.self, Delete.self],
-            defaultSubcommand: ListAll.self
-        )
-
-        struct ListAll: AsyncParsableCommand {
-            static let configuration = CommandConfiguration(
-                commandName: "list",
-                abstract: "Show all reminder lists"
-            )
-
-            @Option(name: .shortAndLong, help: "Output format (text, json, pretty-json, yaml)")
-            var format: OutputFormat = .text
-
-            mutating func run() async throws {
-                let store = ReminderStore()
-                try await store.requestAccess()
-                try await store.showAllLists(format: format)
-            }
-        }
-
-        struct Create: AsyncParsableCommand {
-            static let configuration = CommandConfiguration(
-                abstract: "Create a new reminder list"
-            )
-
-            @Argument(help: "The name of the list to create")
-            var name: String
-
-            mutating func run() async throws {
-                let store = ReminderStore()
-                try await store.requestAccess()
-                try store.createList(name: name)
-            }
-        }
-
-        struct Delete: AsyncParsableCommand {
-            static let configuration = CommandConfiguration(
-                abstract: "Delete a reminder list"
-            )
-
-            @Argument(help: "The name of the list to delete")
-            var name: String
-
-            @Flag(name: .shortAndLong, help: "Skip confirmation")
-            var force: Bool = false
-
-            mutating func run() async throws {
-                let store = ReminderStore()
-                try await store.requestAccess()
-                try store.deleteList(name: name, force: force)
             }
         }
     }
@@ -214,6 +154,77 @@ extension ReminderCLI {
     }
 }
 
+// MARK: - Lists Command Group
+extension ReminderCLI {
+    struct Lists: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "List, create, and delete reminder lists",
+            discussion: "Running `reminder-cli lists` without a subcommand lists all reminder lists (same as `lists list`).",
+            subcommands: [ListAll.self, Create.self, Delete.self],
+            defaultSubcommand: ListAll.self
+        )
+
+        struct ListAll: AsyncParsableCommand {
+            static let configuration = CommandConfiguration(
+                commandName: "list",
+                abstract: "List all reminder lists"
+            )
+
+            @Flag(name: .shortAndLong, help: "Include reminder count per list (all reminders, including completed; slower)")
+            var count: Bool = false
+
+            @Option(name: .shortAndLong, help: "Output format (text, json, pretty-json, yaml)")
+            var format: OutputFormat = .text
+
+            mutating func run() async throws {
+                let store = ReminderStore()
+                try await store.requestAccess()
+                try await store.listCalendars(includeCount: count, format: format)
+            }
+        }
+
+        struct Create: AsyncParsableCommand {
+            static let configuration = CommandConfiguration(
+                abstract: "Create a new reminder list"
+            )
+
+            @Argument(help: "The name of the list to create")
+            var name: String
+
+            @Option(name: .shortAndLong, help: "Output format (text, json, pretty-json, yaml)")
+            var format: OutputFormat = .text
+
+            mutating func run() async throws {
+                let store = ReminderStore()
+                try await store.requestAccess()
+                try store.createList(name: name, format: format)
+            }
+        }
+
+        struct Delete: AsyncParsableCommand {
+            static let configuration = CommandConfiguration(
+                abstract: "Delete a reminder list and all of its reminders",
+                discussion: "The list can be given by name (case-insensitive) or by calendarIdentifier. If several lists share the same name, use the calendarIdentifier."
+            )
+
+            @Argument(help: "The name or calendarIdentifier of the list to delete")
+            var list: String
+
+            @Flag(name: .shortAndLong, help: "Skip confirmation")
+            var force: Bool = false
+
+            @Option(name: .long, help: "Output format (text, json, pretty-json, yaml)")
+            var format: OutputFormat = .text
+
+            mutating func run() async throws {
+                let store = ReminderStore()
+                try await store.requestAccess()
+                try await store.deleteList(list, force: force, format: format)
+            }
+        }
+    }
+}
+
 // MARK: - Create Command
 extension ReminderCLI {
     struct Create: AsyncParsableCommand {
@@ -251,6 +262,9 @@ extension ReminderCLI {
         @Option(help: "Number of occurrences before recurrence ends")
         var recurrenceCount: Int?
 
+        @Option(name: .shortAndLong, help: "Output format (text, json, pretty-json, yaml)")
+        var format: OutputFormat = .text
+
         mutating func run() async throws {
             let store = ReminderStore()
             try await store.requestAccess()
@@ -264,7 +278,8 @@ extension ReminderCLI {
                 url: url,
                 recurrence: recurrence,
                 recurrenceEnd: recurrenceEnd,
-                recurrenceCount: recurrenceCount
+                recurrenceCount: recurrenceCount,
+                format: format
             )
         }
     }
@@ -344,6 +359,9 @@ extension ReminderCLI {
         @Flag(help: "Remove recurrence from the reminder")
         var noRecurrence: Bool = false
 
+        @Option(name: .shortAndLong, help: "Output format (text, json, pretty-json, yaml)")
+        var format: OutputFormat = .text
+
         mutating func run() async throws {
             let store = ReminderStore()
             try await store.requestAccess()
@@ -359,7 +377,8 @@ extension ReminderCLI {
                 recurrence: recurrence,
                 recurrenceEnd: recurrenceEnd,
                 recurrenceCount: recurrenceCount,
-                noRecurrence: noRecurrence
+                noRecurrence: noRecurrence,
+                format: format
             )
         }
     }
@@ -409,10 +428,13 @@ extension ReminderCLI {
         @Flag(name: .shortAndLong, help: "Skip confirmation")
         var force: Bool = false
 
+        @Option(name: .long, help: "Output format (text, json, pretty-json, yaml)")
+        var format: OutputFormat = .text
+
         mutating func run() async throws {
             let store = ReminderStore()
             try await store.requestAccess()
-            try await store.deleteReminder(identifier: identifier, force: force)
+            try await store.deleteReminder(identifier: identifier, force: force, format: format)
         }
     }
 }
@@ -458,10 +480,13 @@ extension ReminderCLI {
         )
         var identifier: String
 
+        @Option(name: .shortAndLong, help: "Output format (text, json, pretty-json, yaml)")
+        var format: OutputFormat = .text
+
         mutating func run() async throws {
             let store = ReminderStore()
             try await store.requestAccess()
-            try await store.completeReminder(identifier: identifier)
+            try await store.completeReminder(identifier: identifier, format: format)
         }
     }
 }

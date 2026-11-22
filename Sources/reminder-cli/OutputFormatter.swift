@@ -37,10 +37,10 @@ struct AlarmOutput: Codable {
     let proximity: String? // "arriving", "leaving" for location-based alarms
 }
 
-struct ListOutput: Codable {
-    let name: String
-    let reminderCount: Int
-    let isDefault: Bool
+struct DeleteConfirmationOutput: Codable {
+    let deleted: Bool
+    let id: String
+    let title: String
 }
 
 struct RecurrenceRuleOutput: Codable {
@@ -49,6 +49,13 @@ struct RecurrenceRuleOutput: Codable {
     let daysOfWeek: [String]?
     let endDate: String?
     let occurrenceCount: Int?
+}
+
+struct ListOutput: Codable {
+    let name: String
+    let calendarIdentifier: String
+    let color: String?
+    let reminderCount: Int?
 }
 
 // MARK: - Output Formatter
@@ -89,6 +96,43 @@ struct OutputFormatter {
             alarms: reminder.alarms.map { $0.map(convertAlarm) },
             recurrenceRules: reminder.recurrenceRules.map { $0.map(convertRecurrenceRule) }
         )
+    }
+
+    func convertCalendar(_ calendar: EKCalendar, reminderCount: Int?) -> ListOutput {
+        ListOutput(
+            name: calendar.title,
+            calendarIdentifier: calendar.calendarIdentifier,
+            color: hexColor(from: calendar.cgColor),
+            reminderCount: reminderCount
+        )
+    }
+
+    func hexColor(from cgColor: CGColor?) -> String? {
+        guard let cgColor = cgColor, let components = cgColor.components else {
+            return nil
+        }
+
+        // EKCalendar.cgColor isn't guaranteed to be in an RGB colorspace.
+        // CGColor.converted(to:) needs color management that isn't reliably
+        // available on headless CI runners, so interpret components
+        // ourselves based on the colorspace model instead.
+        let rgb: (r: CGFloat, g: CGFloat, b: CGFloat)?
+        switch cgColor.colorSpace?.model {
+        case .monochrome where components.count >= 1:
+            rgb = (components[0], components[0], components[0])
+        case .rgb where components.count >= 3:
+            rgb = (components[0], components[1], components[2])
+        default:
+            rgb = components.count >= 3 ? (components[0], components[1], components[2]) : nil
+        }
+
+        guard let rgb = rgb else {
+            return nil
+        }
+        let r = Int((rgb.r * 255).rounded())
+        let g = Int((rgb.g * 255).rounded())
+        let b = Int((rgb.b * 255).rounded())
+        return String(format: "#%02X%02X%02X", r, g, b)
     }
 
     private func convertAlarm(_ alarm: EKAlarm) -> AlarmOutput {
@@ -197,6 +241,59 @@ struct OutputFormatter {
             try outputJSON(reminder: reminder, pretty: true)
         case .yaml:
             try outputYAML(reminder: reminder)
+        }
+    }
+
+    func output(deleteConfirmation: DeleteConfirmationOutput) throws {
+        switch format {
+        case .text:
+            print("Deleted: \(deleteConfirmation.title) (\(deleteConfirmation.id))")
+        case .json:
+            try outputJSON(data: deleteConfirmation, pretty: false)
+        case .prettyJson:
+            try outputJSON(data: deleteConfirmation, pretty: true)
+        case .yaml:
+            try outputYAML(data: deleteConfirmation)
+        }
+    }
+
+    func output(list: ListOutput) throws {
+        switch format {
+        case .text:
+            outputText(lists: [list])
+        case .json:
+            try outputJSON(data: list, pretty: false)
+        case .prettyJson:
+            try outputJSON(data: list, pretty: true)
+        case .yaml:
+            try outputYAML(data: list)
+        }
+    }
+    
+    func output(lists: [ListOutput]) throws {
+        switch format {
+        case .text:
+            outputText(lists: lists)
+        case .json:
+            try outputJSON(data: lists, pretty: false)
+        case .prettyJson:
+            try outputJSON(data: lists, pretty: true)
+        case .yaml:
+            try outputYAML(data: lists)
+        }
+    }
+
+    private func outputText(lists: [ListOutput]) {
+        if lists.isEmpty {
+            print("  (no lists)")
+            return
+        }
+        for list in lists {
+            var line = "  \(list.name)"
+            if let count = list.reminderCount {
+                line += " (\(count))"
+            }
+            print(line)
         }
     }
 
@@ -325,29 +422,6 @@ struct OutputFormatter {
 
     private func outputYAML(reminders: [ReminderOutput]) throws {
         try outputYAML(data: reminders)
-    }
-
-    // MARK: - Lists Output
-
-    func outputLists(_ lists: [[String: Any]]) throws {
-        let codableLists = lists.map { dict -> ListOutput in
-            ListOutput(
-                name: dict["name"] as? String ?? "",
-                reminderCount: dict["reminderCount"] as? Int ?? 0,
-                isDefault: dict["isDefault"] as? Bool ?? false
-            )
-        }
-
-        switch format {
-        case .text:
-            break // handled by caller
-        case .json:
-            try outputJSON(data: codableLists, pretty: false)
-        case .prettyJson:
-            try outputJSON(data: codableLists, pretty: true)
-        case .yaml:
-            try outputYAML(data: codableLists)
-        }
     }
 
     // MARK: - Helper Methods

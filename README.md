@@ -5,6 +5,7 @@ A Swift-based command-line tool to manage iCloud Reminders on macOS.
 ## Features
 
 - 📋 **List** - View all reminders or filter by specific list
+- 🗂️ **Lists** - View, create, and delete reminder lists
 - 🔍 **Show** - Display detailed information about a reminder (including alarms)
 - ➕ **Create** - Add new reminders with notes, URLs, start/due dates, priority, and recurrence
 - ✏️ **Update** - Modify existing reminders (including recurrence)
@@ -17,6 +18,7 @@ A Swift-based command-line tool to manage iCloud Reminders on macOS.
 ## Requirements
 
 - macOS 13.0 or later
+- Apple Silicon Mac (arm64) only — Intel Macs are not supported
 - Swift 5.9 or later (swift-tools-version 5.9)
 - Xcode (for building)
 
@@ -60,6 +62,39 @@ reminder-cli list --format pretty-json
 ```
 
 List output includes a short ID prefix like `[29CC6D52]` that you can use for show/update/complete/delete. If the prefix is ambiguous, use a longer prefix or the full ID.
+
+### List all reminder lists
+
+```bash
+# List names of all reminder lists
+reminder-cli lists
+
+# Include reminder count per list (all reminders, including completed; slower, off by default)
+reminder-cli lists --count
+
+# Output format (text, json, pretty-json, yaml)
+reminder-cli lists --format json
+```
+
+### Create and delete reminder lists
+
+```bash
+# Create a new list (in the same account as your default reminders list)
+reminder-cli lists create "Shopping"
+
+# Print the created list as JSON (includes its calendarIdentifier)
+reminder-cli lists create "Shopping" --format json
+
+# Delete a list AND ALL OF ITS REMINDERS (asks for confirmation)
+reminder-cli lists delete "Shopping"
+
+# Skip confirmation, print a {"deleted": true, ...} object
+# (-f is --force here, so the format option is long-only)
+reminder-cli lists delete "Shopping" --force --format json
+
+# If several lists share a name, delete by calendarIdentifier instead
+reminder-cli lists delete 6A1B2C3D-0000-0000-0000-000000000000
+```
 
 ### Show reminder details
 
@@ -123,6 +158,9 @@ reminder-cli create "Sprint review" \
   --due-date "2026-01-14" \
   --recurrence weekly \
   --recurrence-count 10
+
+# Output the created reminder as JSON (useful for scripting)
+reminder-cli create "Buy milk" --format json
 ```
 
 ### Update a reminder
@@ -144,18 +182,27 @@ reminder-cli update 29CC6D52 \
   --start-date "2026-01-14" \
   --url "https://example.com/store"
 
+# Move to a different list (case-insensitive)
+reminder-cli update 29CC6D52 --list "Shopping"
+
 # Set or change recurrence
 reminder-cli update 29CC6D52 --recurrence daily
 reminder-cli update 29CC6D52 --recurrence "every 2 weeks:mon,fri"
 
 # Remove recurrence
 reminder-cli update 29CC6D52 --no-recurrence
+
+# Output the updated reminder as JSON
+reminder-cli update 29CC6D52 --title "Buy oat milk" --format json
 ```
 
 ### Complete a reminder
 
 ```bash
 reminder-cli complete 29CC6D52
+
+# Output the completed reminder as JSON
+reminder-cli complete 29CC6D52 --format json
 ```
 
 ### Delete a reminder
@@ -166,6 +213,9 @@ reminder-cli delete 29CC6D52
 
 # Skip confirmation
 reminder-cli delete 29CC6D52 --force
+
+# Skip confirmation and output a JSON confirmation object
+reminder-cli delete 29CC6D52 --force --format json
 ```
 
 ## Priority Levels
@@ -201,6 +251,7 @@ make build      # Build debug version
 make release    # Build release version
 make install    # Build and install to ~/bin
 make uninstall  # Remove from ~/bin
+make update     # Pull latest and rebuild (symlink stays valid)
 make clean      # Remove build artifacts
 make run        # Build and run (debug)
 make version    # Show Swift version info
@@ -214,6 +265,14 @@ swift build                      # Debug build
 swift build -c release          # Release build
 .build/debug/reminder-cli list  # Run debug version
 ```
+
+### Testing
+
+```bash
+swift test  # Run the unit test suite
+```
+
+Tests cover EventKit-independent logic only (`OutputFormatter`, date parsing, sort comparisons) since CI cannot grant Reminders access.
 
 ## License
 
