@@ -134,6 +134,9 @@ reminder-cli update 29CC6D52 \
   --start-date "2026-01-14" \
   --url "https://example.com/store"
 
+# Move to a different list (case-insensitive)
+reminder-cli update 29CC6D52 --list "Shopping"
+
 # Output the updated reminder as JSON
 reminder-cli update 29CC6D52 --title "Buy oat milk" --format json
 ```
